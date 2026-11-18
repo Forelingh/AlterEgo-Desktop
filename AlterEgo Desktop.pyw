@@ -801,6 +801,8 @@ class GearTile(QFrame):
     TRACK={'myth':'#ff982d','hero':'#b65cf2','champion':'#4da9ff','veteran':'#40c46d','adventurer':'#aeb7bd','crafted':'#53d994'}
     def __init__(self, slot, item, parent=None):
         super().__init__(parent)
+        self.item=item
+        self.slot=slot
         self.setObjectName('gearTile');self.setFixedHeight(53)
         self.setStyleSheet('QFrame#gearTile{background:#1d2226;border:1px solid #30383e;border-radius:3px;} QFrame#gearTile:hover{background:#30424c;border:1px solid #6b8899;} QLabel{background:transparent;border:none;}')
         row=QHBoxLayout(self);row.setContentsMargins(5,3,5,3);row.setSpacing(9)
@@ -845,6 +847,11 @@ class GearTile(QFrame):
         self.setMouseTracking(True)
         icon.setMouseTracking(True)
         icon.installEventFilter(self)
+        if item:
+            self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            self.customContextMenuRequested.connect(self._show_item_context_menu)
+            icon.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            icon.customContextMenuRequested.connect(self._show_item_context_menu)
         details_row=QHBoxLayout();details_row.setContentsMargins(0,0,0,0);details_row.setSpacing(8)
         details=QVBoxLayout();details.setContentsMargins(0,0,0,0);details.setSpacing(1)
         title=QLabel(slot);title.setStyleSheet('color:#c1cbd1;font-size:13px;');details.addWidget(title)
@@ -1022,11 +1029,27 @@ class GearTile(QFrame):
         super().leaveEvent(event)
         QTimer.singleShot(0,self._sync_hover)
 
+    def _show_item_context_menu(self, _pos):
+        if not self.item:
+            return
+        menu=QMenu(self)
+        action=menu.addAction('Проверить наличие предмета на других персонажах')
+        action.triggered.connect(self._check_item_on_other_characters)
+        menu.exec(QCursor.pos())
+
+    def _check_item_on_other_characters(self):
+        dialog=self.window()
+        if isinstance(dialog,GearDialog):
+            dialog.check_item_on_other_characters(self.item)
+
 class GearDialog(QDialog):
     LABELS={'HEADSLOT':'Head','NECKSLOT':'Neck','SHOULDERSLOT':'Shoulders','BACKSLOT':'Back','CHESTSLOT':'Chest','WRISTSLOT':'Wrist','SHIRTSLOT':'Shirt','TABARDSLOT':'Tabard','HANDSSLOT':'Hands','WAISTSLOT':'Waist','LEGSSLOT':'Legs','FEETSLOT':'Feet','MAINHANDSLOT':'Main Hand','SECONDARYHANDSLOT':'Off Hand','FINGERSLOT':'Finger','FINGER0SLOT':'Finger','FINGER1SLOT':'Finger','TRINKET0SLOT':'Trinket','TRINKET1SLOT':'Trinket'}
     def __init__(self,c,parent=None):
         super().__init__(parent)
         info=obj(c.get('info'));name=str(info.get('name','Character'))
+        self.character=c
+        self.character_key=c.get('key')
+        self.parent_window=parent
         self.setWindowTitle('Equipment — '+name);self.resize(760,735);self.setMinimumSize(760,650)
         outer=QVBoxLayout(self);outer.setContentsMargins(12,10,12,10);outer.setSpacing(7)
         top=QHBoxLayout();head=QLabel(name+' <span style="color:#87949d">- '+escape(str(info.get('realm','')))+'</span>');head.setStyleSheet('font-size:16px;font-weight:700');top.addWidget(head);top.addStretch()
@@ -1054,7 +1077,7 @@ class GearDialog(QDialog):
         right=['HANDSSLOT','WAISTSLOT','LEGSSLOT','FEETSLOT','FINGER0SLOT','FINGER1SLOT','TRINKET0SLOT','TRINKET1SLOT']
         for col,slots in enumerate((left,right)):
             for i,slot in enumerate(slots):
-                grid.addWidget(GearTile(self.LABELS.get(slot,slot),slot_map.get(slot)),i,col)
+                grid.addWidget(GearTile(self.LABELS.get(slot,slot),slot_map.get(slot),self),i,col)
         # Weapon slots belong together at the bottom center, as in WoW's character pane.
         weapons=QWidget()
         weapon_row=QHBoxLayout(weapons)
@@ -1062,14 +1085,145 @@ class GearDialog(QDialog):
         weapon_row.setSpacing(16)
         weapon_row.addStretch(1)
         for weapon_slot in ('MAINHANDSLOT','SECONDARYHANDSLOT'):
-            tile=GearTile(self.LABELS[weapon_slot],slot_map.get(weapon_slot))
+            tile=GearTile(self.LABELS[weapon_slot],slot_map.get(weapon_slot),self)
             tile.setFixedWidth(265)
             weapon_row.addWidget(tile)
         weapon_row.addStretch(1)
         grid.addWidget(weapons,8,0,1,2)
         for i,item in enumerate(extra):
-            grid.addWidget(GearTile(str(item.get('itemSlotName','Other')),item),9+i,0,1,2)
+            grid.addWidget(GearTile(str(item.get('itemSlotName','Other')),item,self),9+i,0,1,2)
         grid.setColumnStretch(0,1);grid.setColumnStretch(1,1)
+    @staticmethod
+    def _normalize_item_name(item):
+        return re.sub(r'\s+', ' ', str(obj(item).get('itemName') or '').strip()).casefold()
+
+    @staticmethod
+    def _upgrade_state(item):
+        item=obj(item)
+        track=str(item.get('itemUpgradeTrack') or '').strip()
+        key=track.casefold()
+        if key not in TRACK_ORDER:
+            return None
+        try:
+            level=int(item.get('itemUpgradeLevel'))
+        except (TypeError,ValueError):
+            return None
+        try:
+            maximum=int(item.get('itemUpgradeMax'))
+        except (TypeError,ValueError):
+            maximum=0
+        return TRACK_ORDER[key], level, maximum, track
+
+    @classmethod
+    def _item_is_lower(cls, candidate, target):
+        c=cls._upgrade_state(candidate)
+        t=cls._upgrade_state(target)
+        if c is None or t is None:
+            return False
+        c_track,c_level,_,_=c
+        t_track,t_level,_,_=t
+        return c_track < t_track or (c_track == t_track and c_level < t_level)
+
+    @staticmethod
+    def _item_upgrade_text(item):
+        item=obj(item)
+        track=str(item.get('itemUpgradeTrack') or '').strip()
+        try:
+            level=int(item.get('itemUpgradeLevel'))
+            maximum=int(item.get('itemUpgradeMax'))
+        except (TypeError,ValueError):
+            level=maximum=None
+        if track:
+            if level is not None and maximum is not None and maximum>0:
+                return f'{track} {level}/{maximum}'
+            return track
+        return 'Upgrade Track неизвестен'
+
+    def check_item_on_other_characters(self, target_item):
+        target_name=str(obj(target_item).get('itemName') or '').strip()
+        normalized_name=self._normalize_item_name(target_item)
+        if not normalized_name:
+            QMessageBox.information(self,'Проверка предмета','У выбранного предмета нет сохранённого названия.')
+            return
+
+        chars=self.parent_window.filtered() if hasattr(self,'parent_window') else []
+        current_key=getattr(self,'character_key',None)
+        if not chars and self.parent() is not None:
+            try:
+                chars=self.parent().filtered()
+            except Exception:
+                chars=[]
+        findings=[]
+        for c in chars:
+            if c.get('key')==current_key:
+                continue
+            equipment=arr(obj(c.get('data')).get('equipment'))
+            matching=[x for x in equipment
+                      if isinstance(x,dict) and self._normalize_item_name(x)==normalized_name]
+            if not matching:
+                findings.append((c,None))
+                continue
+            lower=next((x for x in matching if self._item_is_lower(x,target_item)),None)
+            if lower is not None:
+                findings.append((c,lower))
+
+        dialog=QDialog(self)
+        dialog.setWindowTitle('Check Item on Other Characters')
+        dialog.resize(560,470)
+        layout=QVBoxLayout(dialog)
+        heading=QLabel('Check Item on Other Characters')
+        heading.setStyleSheet('font-size:18px;font-weight:700;color:#ffdd2d;')
+        layout.addWidget(heading)
+        target_text=self._item_upgrade_text(target_item)
+        target_label=QLabel('<b>'+escape(target_name)+'</b> — '+escape(target_text))
+        target_label.setStyleSheet('color:#d6dde1;font-size:13px;')
+        layout.addWidget(target_label)
+        report=QScrollArea()
+        report.setWidgetResizable(True)
+        content=QWidget()
+        stack=QVBoxLayout(content)
+        if not chars:
+            stack.addWidget(QLabel('No characters match the current filters.'))
+        elif not findings:
+            ok=QLabel('No characters have a lower version or are missing this item.')
+            ok.setStyleSheet('font-size:15px;color:#5fe09b;font-weight:700;')
+            stack.addWidget(ok)
+        else:
+            for c,item in findings:
+                info=obj(c.get('info'))
+                name=str(info.get('name') or 'Unknown')
+                realm=str(info.get('realm') or '')
+                num=self.settings.get('numbers',{}).get(c.get('key'))
+                prefix=str(num)+'. ' if str(num).isdigit() else ''
+                color=character_class_color(info)
+                account_name=str(self.alias(c.get('account')))
+                name_label=QLabel(
+                    '<span style="color:'+color+';font-weight:700">'+escape(prefix+name)+'</span>'
+                    '<span style="color:#aeb6ba"> - '+escape(realm)+' ('+escape(account_name)+')</span>'
+                )
+                name_label.setTextFormat(Qt.TextFormat.RichText)
+                name_label.setStyleSheet('font-size:13px;')
+                if item is None:
+                    state='Нет предмета'
+                    state_color='#ff6262'
+                else:
+                    state=self._item_upgrade_text(item)
+                    state_color='#ffdd2d'
+                state_label=QLabel(state)
+                state_label.setStyleSheet('color:'+state_color+';font-size:12px;font-weight:600;')
+                row_widget=QWidget()
+                row_layout=QVBoxLayout(row_widget)
+                row_layout.setContentsMargins(7,4,7,4)
+                row_layout.setSpacing(1)
+                row_layout.addWidget(name_label)
+                row_layout.addWidget(state_label)
+                row_widget.setStyleSheet('background:#1d2226;border:1px solid #30383e;border-radius:3px;')
+                stack.addWidget(row_widget)
+        stack.addStretch(1)
+        report.setWidget(content)
+        layout.addWidget(report)
+        dialog.exec()
+
 
 WOW_CLASS_COLORS={
     1:'#C69B6D',  # Warrior

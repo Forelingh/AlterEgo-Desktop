@@ -1193,10 +1193,10 @@ class GearDialog(QDialog):
                 info=obj(c.get('info'))
                 name=str(info.get('name') or 'Unknown')
                 realm=str(info.get('realm') or '')
-                num=self.settings.get('numbers',{}).get(c.get('key'))
+                num=self.parent_window.settings.get('numbers',{}).get(c.get('key'))
                 prefix=str(num)+'. ' if str(num).isdigit() else ''
                 color=character_class_color(info)
-                account_name=str(self.alias(c.get('account')))
+                account_name=str(self.parent_window.alias(c.get('account')))
                 name_label=QLabel(
                     '<span style="color:'+color+';font-weight:700">'+escape(prefix+name)+'</span>'
                     '<span style="color:#aeb6ba"> - '+escape(realm)+' ('+escape(account_name)+')</span>'

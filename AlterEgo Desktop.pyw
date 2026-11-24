@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
 
 APP_DIR = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'AlterEgoDesktop'
 SETTINGS = APP_DIR / 'settings.json'
-APP_VERSION = '1.0.8'
+APP_VERSION = '1.0.9'
 # Set before publishing: e.g. 'owner/AlterEgo-Desktop'. No personal data is sent.
 UPDATE_REPOSITORY = 'Forelingh/AlterEgo-Desktop'
 
@@ -164,20 +164,13 @@ def raid_tooltip(c,difficulty):
 
 # Use the entire character column for raid progress. Both the raid labels
 # and skulls use the same coordinates, recalculated on widget resize.
-RAID_GAP = 11.0
-SKULL_WIDTH = 255
-CHAR_COLUMN_WIDTH = 270
+RAID_GAP = 12
+SKULL_WIDTH = 132
+CHAR_COLUMN_WIDTH = 136
+HEADER_HEIGHT = 58
 
 def skull_x(i, width):
-    # Leave a symmetrical margin at both edges; three internal raid gaps.
-    left = 7.0
-    right = 7.0
-    skull_size = 15.0
-    step = max(17.5, (width - left - right - skull_size - 3 * RAID_GAP) / 11.0)
-    return left + i * step + (RAID_GAP if i >= 1 else 0) + (RAID_GAP if i >= 9 else 0) + (RAID_GAP if i >= 10 else 0)
-
-def divider_x(boundary, width):
-    return (skull_x(boundary-1, width) + 15 + skull_x(boundary, width)) / 2
+    return (width-124)/2 + i*8 + 10*sum(i>=n for n in (1,9,10))
 
 class Skulls(QWidget):
     def __init__(self,c,difficulty,parent=None):
@@ -210,18 +203,11 @@ class Skulls(QWidget):
         color=dict(DIFFS)[self.difficulty]
         flags=raid_flags(self.c,self.difficulty)
         for i,flag in enumerate(flags):
-            x=skull_x(i,self.width());y=3
-            p.setPen(QPen(QColor(color if flag else '#46505a'),1.4))
+            x=skull_x(i,self.width())
+            p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QBrush(QColor(color if flag else '#46505a')))
-            p.drawEllipse(QRect(int(x+2),y,11,11))
-            p.drawRect(QRect(int(x+4),y+9,7,4))
-            p.setPen(QColor('#111a1c'))
-            p.drawEllipse(QRect(int(x+4),y+4,2,2));p.drawEllipse(QRect(int(x+9),y+4,2,2))
-        p.setRenderHint(QPainter.RenderHint.Antialiasing,False)
-        p.setPen(QPen(QColor('#879198'),1))
-        for boundary in (1,9,10):
-            x=round(divider_x(boundary,self.width()))
-            p.drawLine(x,3,x,19)
+            p.drawRoundedRect(QRect(round(x),(self.height()-10)//2,6,10),1,1)
+
 
 def season_currency_capped(currency, maximum_override=None):
     """True only when a known positive seasonal cap has actually been reached."""
@@ -510,8 +496,8 @@ class RaidHeaders(QWidget):
         p.fillRect(self.rect(),QColor(self.row_bg))
         p.setPen(QColor('#aeb8c0' if self.muted_theme else '#ffdd2d'))
         f=p.font();f.setPointSize(8);f.setBold(True);p.setFont(f)
-        for label,start,length in [('TG',0,1),('VA',1,8),('UoK',9,1),('MoQ',10,2)]:
-            center=(skull_x(start,self.width())+skull_x(start+length-1,self.width()))/2+8
+        for label,start,length in [('TG',0,1),('VA',1,8),('UK',9,1),('MQ',10,2)]:
+            center=(skull_x(start,self.width())+skull_x(start+length-1,self.width()))/2+3
             p.drawText(QRect(round(center-14),0,28,self.height()),Qt.AlignmentFlag.AlignCenter,label)
 
 # Icon images are downloaded only as needed and cached independently of the .pyw file.
@@ -2105,7 +2091,7 @@ try {
         self._search_action_buttons=(manage_button,folder_button)
         QTimer.singleShot(0,self._align_search_field)
         l.addLayout(header)
-        self.sticky_scroll=QScrollArea();self.sticky_scroll.setWidgetResizable(False);self.sticky_scroll.setFixedHeight(43);self.sticky_scroll.setFrameShape(QFrame.Shape.NoFrame);self.sticky_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff);self.sticky_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff);l.addWidget(self.sticky_scroll)
+        self.sticky_scroll=QScrollArea();self.sticky_scroll.setWidgetResizable(False);self.sticky_scroll.setFixedHeight(HEADER_HEIGHT+3);self.sticky_scroll.setFrameShape(QFrame.Shape.NoFrame);self.sticky_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff);self.sticky_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff);l.addWidget(self.sticky_scroll)
         self.sticky_content=QWidget();self.sticky_scroll.setWidget(self.sticky_content);self.sticky_grid=QGridLayout(self.sticky_content);self.sticky_grid.setContentsMargins(0,0,0,0);self.sticky_grid.setHorizontalSpacing(12);self.sticky_grid.setVerticalSpacing(0)
         self.scroll=QScrollArea();self.scroll.setWidgetResizable(False);self.scroll.setFrameShape(QFrame.Shape.NoFrame);self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded);self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff);l.addWidget(self.scroll,1)
 
@@ -2153,7 +2139,7 @@ try {
         self._frozen_body.setFixedWidth(197)
         self._frozen_body.raise_()
         self._frozen_header=QLabel('Character',self.sticky_scroll.viewport())
-        self._frozen_header.setFixedHeight(40)
+        self._frozen_header.setFixedHeight(HEADER_HEIGHT)
         self._frozen_header.setContentsMargins(7,2,5,2)
         self._frozen_header.setStyleSheet('background:#17191b;color:#ffdd2d;font-weight:700;')
         self._frozen_header.raise_()
@@ -2573,7 +2559,7 @@ try {
         for column in range(self.grid.columnCount()):self.grid.setColumnMinimumWidth(column,0)
         self.grid.setColumnMinimumWidth(0,185)
         for column in range(1,cols):self.grid.setColumnMinimumWidth(column,CHAR_COLUMN_WIDTH)
-        sticky_title=QLabel('Character');sticky_title.setFixedHeight(40);sticky_title.setContentsMargins(7,2,5,2);sticky_title.setStyleSheet('background:#1b1e21;color:#ffdd2d;font-weight:700');self.sticky_grid.addWidget(sticky_title,0,0)
+        sticky_title=QLabel('Character');sticky_title.setFixedHeight(HEADER_HEIGHT);sticky_title.setContentsMargins(7,2,5,2);sticky_title.setStyleSheet('background:#1b1e21;color:#ffdd2d;font-weight:700');self.sticky_grid.addWidget(sticky_title,0,0)
         for i,c in enumerate(chars,1):
             number=self.settings['numbers'].get(c['key']);prefix=(str(number)+'. ') if number is not None else ''
             name=str(c['info'].get('name',''))
@@ -2584,7 +2570,7 @@ try {
                     super().__init__()
                     self.character=character
                     self.parent_window=parent_window
-                    self.setFixedHeight(40)
+                    self.setFixedHeight(HEADER_HEIGHT)
                     self.setCursor(Qt.CursorShape.PointingHandCursor)
                     self.setObjectName('characterHeader')
                     self.setStyleSheet(
@@ -2598,30 +2584,39 @@ try {
                     else:
                         super().mousePressEvent(event)
             header=CharacterHeader(c,self)
-            line=QHBoxLayout(header);line.setContentsMargins(7,2,7,2);line.setSpacing(3)
+            line=QVBoxLayout(header);line.setContentsMargins(2,2,2,2);line.setSpacing(0)
             name_stack=QVBoxLayout();name_stack.setContentsMargins(0,0,0,0);name_stack.setSpacing(0)
             class_color=character_class_color(c['info'])
             nick=QLabel('<span style="color:'+class_color+';font-weight:700">'+escape(prefix+name)+'</span>'
                         '<span style="font-size:12px;color:#9da4a8"> - '+escape(realm)+'</span>')
             nick.setTextFormat(Qt.TextFormat.RichText)
             nick.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+            nick.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            nick.setMinimumWidth(0)
+            nick.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
+            nick.setToolTip(prefix+name+' - '+realm)
             name_stack.addWidget(nick)
             account_name=QLabel(escape(self.alias(c['account'])))
             account_name.setTextFormat(Qt.TextFormat.RichText)
             account_name.setStyleSheet('color:#8898a2;font-size:12px;font-weight:500;background:transparent;')
             account_name.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+            account_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            account_name.setMinimumWidth(0)
+            account_name.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
             name_stack.addWidget(account_name)
             line.addLayout(name_stack,0)
-            line.addStretch(1)
+            gold_row=QHBoxLayout();gold_row.setSpacing(2);gold_row.addStretch(1)
             money=QLabel(format(gold,','))
             money.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
             money.setStyleSheet('background:transparent;color:#e9c36c;font-size:12px;font-weight:700;')
-            line.addWidget(money,0)
+            gold_row.addWidget(money,0)
             coin=QLabel('g');coin.setFixedSize(16,16)
             coin.setAlignment(Qt.AlignmentFlag.AlignCenter)
             coin.setStyleSheet('background:transparent;color:#e9c36c;font-size:12px;')
             coin.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
-            line.addWidget(coin,0)
+            gold_row.addWidget(coin,0)
+            gold_row.addStretch(1)
+            line.addLayout(gold_row)
             table_icons().request_gold(coin)
             self.sticky_grid.addWidget(header,0,i)
         row=0
@@ -2733,7 +2728,7 @@ try {
         self.sticky_content.show()
         self.sticky_grid.setColumnMinimumWidth(0,185)
         for column in range(1,cols):self.sticky_grid.setColumnMinimumWidth(column,CHAR_COLUMN_WIDTH)
-        self.sticky_content.setFixedSize(required_width,40)
+        self.sticky_content.setFixedSize(required_width,HEADER_HEIGHT)
         self.sticky_scroll.horizontalScrollBar().setRange(0,max(0,required_width-self.sticky_scroll.viewport().width()))
         self.sticky_scroll.horizontalScrollBar().setValue(self.scroll.horizontalScrollBar().value())
         self.fit_window_to_content(cols)
@@ -2797,7 +2792,7 @@ try {
                 item.widget().setFixedWidth(185 if col==0 else CHAR_COLUMN_WIDTH)
         self.sticky_grid.activate()
         width=self.content.width()
-        self.sticky_content.setFixedSize(width,40)
+        self.sticky_content.setFixedSize(width,HEADER_HEIGHT)
         self.sticky_scroll.horizontalScrollBar().setValue(self.scroll.horizontalScrollBar().value())
 
 if __name__=='__main__':

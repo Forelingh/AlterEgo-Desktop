@@ -2067,8 +2067,12 @@ try {
         btn=QPushButton('Enchants && Gems Check')
         btn.setToolTip('Check missing enchants and gems for visible characters')
         btn.clicked.connect(lambda checked=False:self.check_equipment('both'))
+        self.screenshot_button=QPushButton('Screenshot')
+        self.screenshot_button.setToolTip('Copy the entire character table to the clipboard')
+        self.screenshot_button.clicked.connect(self.copy_table_screenshot)
+        audits_row.addWidget(self.screenshot_button)
         audits_row.addWidget(btn,1)
-        audits.setFixedWidth(236)
+        audits.setFixedWidth(345)
         header.addWidget(audits,0,2)
         search_group=QWidget()
         search_row=QHBoxLayout(search_group)
@@ -2186,6 +2190,34 @@ try {
         for heading in self.findChildren(RaidHeaders):
             heading.muted_theme=dark
             heading.update()
+
+    def copy_table_screenshot(self):
+        QToolTip.hideText()
+        self.grid.activate()
+        self.sticky_grid.activate()
+        width=max(self.content.width(),self.sticky_content.width())
+        height=self.sticky_content.height()+self.content.height()
+        if width<=0 or height<=0 or width*height>60000000:
+            QMessageBox.warning(self,'Screenshot','Table is too large or unavailable.')
+            return
+        pix=QPixmap(width,height)
+        if pix.isNull():
+            QMessageBox.warning(self,'Screenshot','Could not allocate screenshot.')
+            return
+        pix.fill(QColor('#17191b'))
+        painter=QPainter(pix)
+        try:
+            self.sticky_content.render(painter,QPoint(0,0))
+            self.content.render(painter,QPoint(0,self.sticky_content.height()))
+            self._frozen_header.render(painter,QPoint(0,0))
+            for widget,row in self._frozen_rows:
+                rect=self.grid.cellRect(row,0)
+                widget.render(painter,QPoint(rect.x(),self.sticky_content.height()+rect.y()))
+        finally:
+            painter.end()
+        QApplication.clipboard().setPixmap(pix)
+        self.screenshot_button.setText('Copied!')
+        QTimer.singleShot(2000,lambda:self.screenshot_button.setText('Screenshot'))
 
     def manage(self):Manager(self).exec()
     def paths_menu(self):

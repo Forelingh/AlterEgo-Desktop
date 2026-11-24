@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
 
 APP_DIR = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'AlterEgoDesktop'
 SETTINGS = APP_DIR / 'settings.json'
-APP_VERSION = '1.0.6'
+APP_VERSION = '1.0.8'
 # Set before publishing: e.g. 'owner/AlterEgo-Desktop'. No personal data is sent.
 UPDATE_REPOSITORY = 'Forelingh/AlterEgo-Desktop'
 
@@ -95,11 +95,12 @@ def find_files(root):
     return files
 
 
-RAID_NAMES = ['The Tidebound Grotto','The Venomous Abyss',"The Unbinding of Kith'ix"]
+RAID_NAMES = ['The Tidebound Grotto','The Venomous Abyss',"The Unbinding of Kith'ix","March on Quel'Danas"]
 RAID_BOSSES = [
  ['Nymrissa Wavecaller'],
  ["Nek'zali the Soulcoiler",'Entombed Sentinels','The Lost Explorers','Vashnik the Malignant','Sszorak','The Twin Fangs','The Coiled Altar',"Ula'tek"],
- ["Kith'ix"]]
+ ["Kith'ix"],
+ ["Belo'ren, Child of Al'ar","Midnight Falls"]]
 DIFFS=[('Normal','#4ccf73'),('Heroic','#b369e6'),('Mythic','#df8b24')]
 
 def raid_instance(c,raid,difficulty):
@@ -114,7 +115,7 @@ def raid_instance(c,raid,difficulty):
     valid_ids = difficulty_ids.get(difficulty, set())
     candidates = []
     for x in arr(obj(obj(c['data']).get('raids')).get('savedInstances')):
-        if not isinstance(x, dict) or not x.get('isRaid') or x.get('name') != raid:
+        if not isinstance(x, dict) or not x.get('isRaid') or (x.get('name') != raid and not (raid == "March on Quel'Danas" and str(x.get('instanceID')) == '2913')):
             continue
         if x.get('locked') is not True:
             continue
@@ -164,15 +165,16 @@ def raid_tooltip(c,difficulty):
 # Use the entire character column for raid progress. Both the raid labels
 # and skulls use the same coordinates, recalculated on widget resize.
 RAID_GAP = 11.0
-SKULL_WIDTH = 208
+SKULL_WIDTH = 255
+CHAR_COLUMN_WIDTH = 270
 
 def skull_x(i, width):
-    # Leave a symmetrical margin at both edges; two internal raid gaps.
+    # Leave a symmetrical margin at both edges; three internal raid gaps.
     left = 7.0
     right = 7.0
     skull_size = 15.0
-    step = max(17.5, (width - left - right - skull_size - 2 * RAID_GAP) / 9.0)
-    return left + i * step + (RAID_GAP if i >= 1 else 0) + (RAID_GAP if i >= 9 else 0)
+    step = max(17.5, (width - left - right - skull_size - 3 * RAID_GAP) / 11.0)
+    return left + i * step + (RAID_GAP if i >= 1 else 0) + (RAID_GAP if i >= 9 else 0) + (RAID_GAP if i >= 10 else 0)
 
 def divider_x(boundary, width):
     return (skull_x(boundary-1, width) + 15 + skull_x(boundary, width)) / 2
@@ -217,7 +219,7 @@ class Skulls(QWidget):
             p.drawEllipse(QRect(int(x+4),y+4,2,2));p.drawEllipse(QRect(int(x+9),y+4,2,2))
         p.setRenderHint(QPainter.RenderHint.Antialiasing,False)
         p.setPen(QPen(QColor('#879198'),1))
-        for boundary in (1,9):
+        for boundary in (1,9,10):
             x=round(divider_x(boundary,self.width()))
             p.drawLine(x,3,x,19)
 
@@ -440,7 +442,7 @@ def vault_raid_tooltip(c):
                     by_order[order]=entry
         if by_order:
             html.append('<div style="height:9px"></div>')
-            for rn,bosses,start in zip(RAID_NAMES,RAID_BOSSES,[0,1,9]):
+            for rn,bosses,start in zip(RAID_NAMES[:3],RAID_BOSSES[:3],[0,1,9]):
                 html.append('<div style="height:7px"></div><span style="color:#ffdd2d">'+escape(rn)+'</span><br>')
                 for i,boss in enumerate(bosses):
                     entry=by_order.get(start+i)
@@ -508,7 +510,7 @@ class RaidHeaders(QWidget):
         p.fillRect(self.rect(),QColor(self.row_bg))
         p.setPen(QColor('#aeb8c0' if self.muted_theme else '#ffdd2d'))
         f=p.font();f.setPointSize(8);f.setBold(True);p.setFont(f)
-        for label,start,length in [('TG',0,1),('VA',1,8),('UoK',9,1)]:
+        for label,start,length in [('TG',0,1),('VA',1,8),('UoK',9,1),('MoQ',10,2)]:
             center=(skull_x(start,self.width())+skull_x(start+length-1,self.width()))/2+8
             p.drawText(QRect(round(center-14),0,28,self.height()),Qt.AlignmentFlag.AlignCenter,label)
 
@@ -2570,7 +2572,7 @@ try {
         self.sticky_content.setMinimumSize(0,0)
         for column in range(self.grid.columnCount()):self.grid.setColumnMinimumWidth(column,0)
         self.grid.setColumnMinimumWidth(0,185)
-        for column in range(1,cols):self.grid.setColumnMinimumWidth(column,220)
+        for column in range(1,cols):self.grid.setColumnMinimumWidth(column,CHAR_COLUMN_WIDTH)
         sticky_title=QLabel('Character');sticky_title.setFixedHeight(40);sticky_title.setContentsMargins(7,2,5,2);sticky_title.setStyleSheet('background:#1b1e21;color:#ffdd2d;font-weight:700');self.sticky_grid.addWidget(sticky_title,0,0)
         for i,c in enumerate(chars,1):
             number=self.settings['numbers'].get(c['key']);prefix=(str(number)+'. ') if number is not None else ''
@@ -2710,7 +2712,7 @@ try {
         # No expanding spacer row: keep the Raid section flush with Dungeons.
         # Ensure the rightmost character is fully reachable via a horizontal scrollbar.
         # Reserve width for each character, including an inter-character gutter.
-        required_width = 185 + len(chars)*220 + max(0,cols-1)*12
+        required_width = 185 + len(chars)*CHAR_COLUMN_WIDTH + max(0,cols-1)*12
         self.content.setFixedWidth(required_width)
         self.grid.activate()
         # Never allow a zero/one-pixel body on a rebuild. A detached grid's
@@ -2730,7 +2732,7 @@ try {
         self.content.show()
         self.sticky_content.show()
         self.sticky_grid.setColumnMinimumWidth(0,185)
-        for column in range(1,cols):self.sticky_grid.setColumnMinimumWidth(column,220)
+        for column in range(1,cols):self.sticky_grid.setColumnMinimumWidth(column,CHAR_COLUMN_WIDTH)
         self.sticky_content.setFixedSize(required_width,40)
         self.sticky_scroll.horizontalScrollBar().setRange(0,max(0,required_width-self.sticky_scroll.viewport().width()))
         self.sticky_scroll.horizontalScrollBar().setValue(self.scroll.horizontalScrollBar().value())
@@ -2792,7 +2794,7 @@ try {
         for col in range(self.sticky_grid.columnCount()):
             item=self.sticky_grid.itemAtPosition(0,col)
             if item and item.widget():
-                item.widget().setFixedWidth(185 if col==0 else 220)
+                item.widget().setFixedWidth(185 if col==0 else CHAR_COLUMN_WIDTH)
         self.sticky_grid.activate()
         width=self.content.width()
         self.sticky_content.setFixedSize(width,40)

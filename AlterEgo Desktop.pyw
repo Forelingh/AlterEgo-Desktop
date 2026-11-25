@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
 
 APP_DIR = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'AlterEgoDesktop'
 SETTINGS = APP_DIR / 'settings.json'
-APP_VERSION = '1.0.9'
+APP_VERSION = '1.0.10'
 # Set before publishing: e.g. 'owner/AlterEgo-Desktop'. No personal data is sent.
 UPDATE_REPOSITORY = 'Forelingh/AlterEgo-Desktop'
 
@@ -139,6 +139,24 @@ def raid_instance(c,raid,difficulty):
         return {}
     # Prefer the newest active lockout if there are duplicate records.
     return max(candidates, key=lambda x: (int(x.get('expires') or 0), int(x.get('id') or 0)))
+
+def raid_week_reset(c):
+    """True when a character has saved raid lockouts, but none remain active this week."""
+    saved=arr(obj(obj(c.get('data')).get('raids')).get('savedInstances'))
+    raid_records=[x for x in saved if isinstance(x,dict) and x.get('isRaid')]
+    if not raid_records:
+        return False
+    now=time.time()
+    for x in raid_records:
+        if x.get('locked') is not True:
+            continue
+        try:
+            expires=float(x.get('expires') or 0)
+        except (TypeError,ValueError):
+            continue
+        if expires>now:
+            return False
+    return True
 
 def raid_flags(c,difficulty):
     out=[]
@@ -394,7 +412,7 @@ def dungeon_tooltip(name, dungeon):
 def vault_raid_tooltip(c):
     """Raid vault tooltip from weekly activityEncounterInfo, not raid lockouts."""
     vault=obj(obj(c['data']).get('vault'))
-    slots=sorted((x for x in arr(vault.get('slots')) if isinstance(x,dict) and x.get('type')==3),key=lambda x:x.get('index',0))[:3]
+    slots=[] if raid_week_reset(c) else sorted((x for x in arr(vault.get('slots')) if isinstance(x,dict) and x.get('type')==3),key=lambda x:x.get('index',0))[:3]
     html=['<div style="font-size:12px;color:#eeeeee"><b>Vault Progress</b><br>']
     def tier(level):
         try: level=int(level or 0)
@@ -413,7 +431,7 @@ def vault_raid_tooltip(c):
                     +('' if unlocked else ' <span style="color:#9ca5aa">('+str(progress)+'/'+str(threshold)+')</span>')+'<br>')
     # uiOrder is the raid-wide position, independent of saved lockout difficulty.
     # index 1 is the first vault activity set; duplicate indices are not extra bosses.
-    info=[x for x in arr(vault.get('activityEncounterInfo')) if isinstance(x,dict) and x.get('type')==3]
+    info=[] if raid_week_reset(c) else [x for x in arr(vault.get('activityEncounterInfo')) if isinstance(x,dict) and x.get('type')==3]
     groups={}
     for entry in info:
         idx=entry.get('index',1)
@@ -442,7 +460,7 @@ def vault_raid_tooltip(c):
 def vault_activity_tooltip(c, kind):
     """Great Vault dungeon/world progress, based on SavedVariables slots."""
     vault = obj(obj(c['data']).get('vault'))
-    slots = sorted((x for x in arr(vault.get('slots'))
+    slots = [] if raid_week_reset(c) else sorted((x for x in arr(vault.get('slots'))
                     if isinstance(x, dict) and x.get('type') == kind),
                    key=lambda x: x.get('index', 0))[:3]
     label = 'dungeons' if kind == 1 else 'activities'
@@ -2465,6 +2483,8 @@ try {
         if hasattr(w,'row_bg'):w.row_bg=bg
         w.setStyleSheet('background:'+bg+';');self.grid.addWidget(w,row,col)
     def vault_slots(self,c,t):
+        if raid_week_reset(c):
+            return []
         slots=arr(obj(obj(c['data']).get('vault')).get('slots'))
         return sorted([x for x in slots if isinstance(x,dict) and x.get('type')==t],key=lambda x:x.get('index',0))[:3]
     def vault_text(self,c,t):
